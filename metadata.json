@@ -1,0 +1,6 @@
+{
+  "name": "'Yun na 'yun? File Sharing",
+  "description": "Fast and direct file sharing platform with real-time transfer tracking and expiration links.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
