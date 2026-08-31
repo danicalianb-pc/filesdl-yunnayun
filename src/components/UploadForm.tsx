@@ -174,61 +174,98 @@ export const UploadForm: React.FC<UploadFormProps> = ({ onUploadSuccess }) => {
       };
 
       xhr.onload = () => {
-        if (xhr.status >= 200 && xhr.status < 300) {
-          const resp = JSON.parse(xhr.responseText);
-          setProgress({
-            stage: 'completed',
-            percent: 100,
-            loadedBytes: selectedFile.size,
-            totalBytes: selectedFile.size,
-            speedBps: 0,
-            etaSeconds: 0,
-          });
+        try {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            let resp: any = {};
+            try {
+              resp = JSON.parse(xhr.responseText);
+            } catch (jsonErr) {
+              throw new Error('Received unexpected non-JSON response from server.');
+            }
 
-          // Generate share link
-          const baseUrl = window.location.origin;
-          const shareUrl = `${baseUrl}/#download=${fileId}`;
+            setProgress({
+              stage: 'completed',
+              percent: 100,
+              loadedBytes: selectedFile.size,
+              totalBytes: selectedFile.size,
+              speedBps: 0,
+              etaSeconds: 0,
+            });
 
-          const shareData: ShareLinkData = {
-            fileId,
-            deleteToken,
-            originalName: selectedFile.name,
-            size: selectedFile.size,
-            expiresAt,
-            downloadLimit,
-            createdAt: Date.now(),
-            shareUrl,
-          };
+            // Generate share link
+            const baseUrl = window.location.origin;
+            const shareUrl = `${baseUrl}/#download=${fileId}`;
 
-          // Save to local storage transfer history
-          try {
-            const stored = localStorage.getItem('yun_transfers');
-            const list = stored ? JSON.parse(stored) : [];
-            list.unshift({
-              id: fileId,
+            const shareData: ShareLinkData = {
+              fileId,
+              deleteToken,
               originalName: selectedFile.name,
               size: selectedFile.size,
-              createdAt: Date.now(),
               expiresAt,
               downloadLimit,
-              deleteToken,
+              createdAt: Date.now(),
               shareUrl,
-            });
-            localStorage.setItem('yun_transfers', JSON.stringify(list.slice(0, 30)));
-          } catch (e) {
-            console.error('Failed to update local transfers storage:', e);
-          }
+            };
 
-          setTimeout(() => {
-            onUploadSuccess(shareData);
-          }, 300);
-        } else {
-          try {
-            const errJson = JSON.parse(xhr.responseText);
-            throw new Error(errJson.error || `Upload failed with status ${xhr.status}`);
-          } catch (e: any) {
-            throw new Error(e.message || `Upload failed (${xhr.status})`);
+            // Save to local storage transfer history
+            try {
+              const stored = localStorage.getItem('yun_transfers');
+              const list = stored ? JSON.parse(stored) : [];
+              list.unshift({
+                id: fileId,
+                originalName: selectedFile.name,
+                size: selectedFile.size,
+                createdAt: Date.now(),
+                expiresAt,
+                downloadLimit,
+                deleteToken,
+                shareUrl,
+              });
+              localStorage.setItem('yun_transfers', JSON.stringify(list.slice(0, 30)));
+            } catch (e) {
+              console.error('Failed to update local transfers storage:', e);
+            }
+
+            setTimeout(() => {
+              onUploadSuccess(shareData);
+            }, 300);
+          } else {
+            let errorMsg = `Server error (${xhr.status})`;
+            try {
+              const errJson = JSON.parse(xhr.responseText);
+              if (errJson.error) errorMsg = errJson.error;
+            } catch {
+              if (xhr.status === 404) {
+                errorMsg = 'API endpoint not found (404). If deployed on Cloudflare Pages, make sure the Node.js backend server is running.';
+              } else if (xhr.status === 413) {
+                errorMsg = 'File payload is too large for the current proxy (413 Request Entity Too Large).';
+              } else if (xhr.status === 524) {
+                errorMsg = 'Cloudflare request timed out (524). Try uploading a smaller file or bypass proxy for direct upload.';
+              } else if (xhr.responseText) {
+                errorMsg = `Server returned: ${xhr.responseText.slice(0, 120)}`;
+              }
+            }
+
+            setProgress({
+              stage: 'error',
+              percent: 0,
+              loadedBytes: 0,
+              totalBytes: 0,
+              speedBps: 0,
+              etaSeconds: 0,
+              errorMessage: errorMsg,
+            });
           }
+        } catch (err: any) {
+          setProgress({
+            stage: 'error',
+            percent: 0,
+            loadedBytes: 0,
+            totalBytes: 0,
+            speedBps: 0,
+            etaSeconds: 0,
+            errorMessage: err.message || 'Unexpected response received from server.',
+          });
         }
       };
 
@@ -240,7 +277,19 @@ export const UploadForm: React.FC<UploadFormProps> = ({ onUploadSuccess }) => {
           totalBytes: 0,
           speedBps: 0,
           etaSeconds: 0,
-          errorMessage: 'Network error occurred during file transfer.',
+          errorMessage: 'Network error occurred. The backend server might be offline or blocked by CORS / proxy settings.',
+        });
+      };
+
+      xhr.ontimeout = () => {
+        setProgress({
+          stage: 'error',
+          percent: 0,
+          loadedBytes: 0,
+          totalBytes: 0,
+          speedBps: 0,
+          etaSeconds: 0,
+          errorMessage: 'Upload timed out. The server took too long to respond.',
         });
       };
 
